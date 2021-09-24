@@ -208,9 +208,8 @@ do_collect-sos() {
         ;;
     esac
 
-    save_dir=${WORKDIR}/ovs-save-dir
+    save_dir=${WORKDIR}/restore_flows
     mkdir -p $save_dir
-    mkdir ${WORKDIR}/restore_flows
     bridges=$(cat ${CMD_DIR}/ovs-vsctl_-t_5_list-br)
 
     # Collect group, flow, and tlv dumps
@@ -244,21 +243,18 @@ do_collect-sos() {
     for br in $bridges; do
         local flow_version=$(ls /${save_dir}/ovs-ofctl_-O_OpenFlow[0-9]*_dump-flows_$br | grep -o OpenFlow[0-9]*)
         local group_version=$(ls /${save_dir}/ovs-ofctl_-O_OpenFlow[0-9]*_dump-groups_$br | grep -o OpenFlow[0-9]*)
-        echo -n "ovs-ofctl add-tlv-map ${br} '" >> ${WORKDIR}/restore_flows/do_restore.sh
+        echo -n "ovs-ofctl add-tlv-map ${br} '" >> ${save_dir}/do_restore.sh
         cat ${save_dir}/ovs-ofctl_-O_OpenFlow[0-9]*_dump-tlv-map_$br | \
         awk '/^  *0x/ {if (cnt != 0) printf ","; \
-            cnt++;printf "{class="$1",type="$2",len="$3"}->"$4}' >> ${WORKDIR}/restore_flows/do_restore.sh
-        echo "'" >> ${WORKDIR}/restore_flows/do_restore.sh
+            cnt++;printf "{class="$1",type="$2",len="$3"}->"$4}' >> ${save_dir}/do_restore.sh
+        echo "'" >> ${save_dir}/do_restore.sh
 
         echo "ovs-ofctl -O ${group_version} add-groups ${br} \
-                    \"${save_dir}/ovs-ofctl_-O_${group_version}_dump-groups_${br}\" ${bundle}" >> ${WORKDIR}/restore_flows/do_restore.sh
+                    \"${save_dir}/ovs-ofctl_-O_${group_version}_dump-groups_${br}\" ${bundle}" >> ${save_dir}/do_restore.sh
 
         echo "ovs-ofctl -O $flow_version replace-flows ${br} \
-                    \"${save_dir}/ovs-ofctl_-O_${flow_version}_dump-flows_${br}\" ${bundle}" >> ${WORKDIR}/restore_flows/do_restore.sh
+                    \"${save_dir}/ovs-ofctl_-O_${flow_version}_dump-flows_${br}\" ${bundle}" >> ${save_dir}/do_restore.sh
     done
-
-    cp -r $save_dir/. ${WORKDIR}/restore_flows
-    rm -rf $save_dir
 
     cat <<EOF > ${WORKDIR}/restore_flows/restore.sh
 CURR_DIR=\$(dirname \$(realpath \$0))
@@ -286,7 +282,7 @@ start_vswitchd() {
     # run ovs-vswitchd
     docker kill ovs-vswitchd &>/dev/null || true
     docker rm ovs-vswitchd &>/dev/null || true
-    docker run -d -p 127.0.0.1:16640:6640/tcp -e RESTORE_DIR="/root/restore_flows" -v ${WORKDIR}/restore_flows:"/root/restore_flows" -v ${VAR_RUN}:/usr/local/var/run/openvswitch/ --name ovs-vswitchd --rm ovs-dbg vswitchd-dummy
+    docker run -d -p 127.0.0.1:16640:6640/tcp -e RESTORE_DIR=${WORKDIR}/restore_flows -v ${WORKDIR}/restore_flows:${WORKDIR}/restore_flows -v ${VAR_RUN}:/usr/local/var/run/openvswitch/ --name ovs-vswitchd --rm ovs-dbg vswitchd-dummy
     sleep 3
 }
 
